@@ -18,12 +18,12 @@ import sys
 
 import mteb
 import paddle
-from models.modeling import BiEncoderModel
-from models.modeling_nv import NVEncodeModel
 from mteb import MTEB
 
 from paddlenlp.peft import LoRAConfig, LoRAModel
 from paddlenlp.transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+from paddlenlp.transformers.llm_embed.modeling import BiEncoderModel
+from paddlenlp.transformers.nv_embed.modeling_nv import NVEncodeModel
 
 
 class MTEB_EvalModel:

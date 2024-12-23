@@ -17,12 +17,12 @@ import os
 from arguments import DataArguments, ModelArguments
 from arguments import RetrieverTrainingArguments as TrainingArguments
 from data import EmbedCollator, TrainDatasetForEmbedding
-from models.modeling import BiEncoderModel
-from models.modeling_nv import NVEncodeModel
 
 from paddlenlp.peft import LoRAConfig, LoRAModel
 from paddlenlp.trainer import PdArgumentParser, Trainer, get_last_checkpoint, set_seed
 from paddlenlp.transformers import AutoTokenizer
+from paddlenlp.transformers.llm_embed.modeling import BiEncoderModel
+from paddlenlp.transformers.nv_embed.modeling_nv import NVEncodeModel
 from paddlenlp.utils.log import logger
 
 
