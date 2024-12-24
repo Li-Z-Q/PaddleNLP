@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union, cast
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
@@ -23,14 +23,9 @@ import tqdm
 from einops import rearrange, repeat
 from paddle.distributed.fleet.utils import recompute
 
-from paddlenlp.transformers import (
-    AutoTokenizer,
-    MistralModel,
-    PretrainedConfig,
-    PretrainedModel,
-)
-from paddlenlp.transformers.model_outputs import BaseModelOutputWithPast, ModelOutput
-from paddlenlp.utils.log import logger
+from ...utils.log import logger
+from .. import AutoTokenizer, MistralModel, PretrainedConfig, PretrainedModel
+from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 
 
 @dataclass

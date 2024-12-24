@@ -20,9 +20,7 @@ from data import EmbedCollator, TrainDatasetForEmbedding
 
 from paddlenlp.peft import LoRAConfig, LoRAModel
 from paddlenlp.trainer import PdArgumentParser, Trainer, get_last_checkpoint, set_seed
-from paddlenlp.transformers import AutoTokenizer
-from paddlenlp.transformers.llm_embed.modeling import BiEncoderModel
-from paddlenlp.transformers.nv_embed.modeling_nv import NVEncodeModel
+from paddlenlp.transformers import AutoTokenizer, BiEncoderModel, NVEncodeModel
 from paddlenlp.utils.log import logger
 
 

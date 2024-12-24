@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union, cast
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import paddle
@@ -21,14 +21,9 @@ import paddle.distributed as dist
 import paddle.nn as nn
 from tqdm import tqdm
 
-from paddlenlp.transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoModelForCausalLM,
-    PretrainedModel,
-)
-from paddlenlp.transformers.model_outputs import ModelOutput
-from paddlenlp.utils.log import logger
+from ...utils.log import logger
+from .. import AutoConfig, AutoModel, PretrainedModel
+from ..model_outputs import ModelOutput
 
 
 @dataclass

@@ -315,3 +315,5 @@ from .mamba.tokenizer import *
 from .jamba.modeling import *
 from .jamba.configuration import *
 from .jamba.tokenizer import *
+from .llm_embed import *
+from .nv_embed import *
