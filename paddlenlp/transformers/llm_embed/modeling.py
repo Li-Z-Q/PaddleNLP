@@ -21,9 +21,9 @@ import paddle.distributed as dist
 import paddle.nn as nn
 from tqdm import tqdm
 
-from ...utils.log import logger
-from .. import AutoConfig, AutoModel, PretrainedModel
-from ..model_outputs import ModelOutput
+from paddlenlp.transformers import AutoConfig, AutoModel, PretrainedModel
+from paddlenlp.transformers.model_outputs import ModelOutput
+from paddlenlp.utils.log import logger
 
 
 @dataclass

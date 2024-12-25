@@ -23,9 +23,14 @@ import tqdm
 from einops import rearrange, repeat
 from paddle.distributed.fleet.utils import recompute
 
-from ...utils.log import logger
-from .. import AutoTokenizer, MistralModel, PretrainedConfig, PretrainedModel
-from ..model_outputs import BaseModelOutputWithPast, ModelOutput
+from paddlenlp.transformers import (
+    AutoTokenizer,
+    MistralModel,
+    PretrainedConfig,
+    PretrainedModel,
+)
+from paddlenlp.transformers.model_outputs import BaseModelOutputWithPast, ModelOutput
+from paddlenlp.utils.log import logger
 
 
 @dataclass
