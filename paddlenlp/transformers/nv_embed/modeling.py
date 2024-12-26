@@ -20,7 +20,6 @@ import paddle
 import paddle.distributed as dist
 import paddle.nn as nn
 import tqdm
-from einops import rearrange, repeat
 from paddle.distributed.fleet.utils import recompute
 
 from paddlenlp.transformers import (
@@ -130,7 +129,11 @@ class LatentModel(PretrainedModel):
             dtype=str(self.latents.weight.dtype).split(".")[-1],
         )
         self_latents_weight_T = self.latents(one).T
-        latents = repeat(self_latents_weight_T, "d h -> b d h", b=last_hidden_states.shape[0])
+        # latents = repeat(self_latents_weight_T, "d h -> b d h", b=last_hidden_states.shape[0]) # from einops import repeat
+        latents = paddle.tile(self_latents_weight_T, repeat_times=last_hidden_states.shape[0]).reshape(
+            self_latents_weight_T.shape[0], last_hidden_states.shape[0], self_latents_weight_T.shape[1]
+        )
+        latents = latents.transpose([1, 0, 2])
 
         normed_x = self.cross_attend_blocks_0_norm(last_hidden_states)
         normed_context = self.cross_attend_blocks_0_norm_context(latents)
@@ -140,13 +143,23 @@ class LatentModel(PretrainedModel):
         k = kv[:, :, : self.config.max_position_embeddings]
         v = kv[:, :, self.config.max_position_embeddings :]
 
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b n h d", h=self.config.num_key_value_heads), (q, k, v))
+        # q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b n h d", h=self.config.num_key_value_heads), (q, k, v)) # from einops import rearrange
+        q = q.reshape(
+            [q.shape[0], q.shape[1], self.config.num_key_value_heads, q.shape[2] // self.config.num_key_value_heads]
+        )
+        k = k.reshape(
+            [k.shape[0], k.shape[1], self.config.num_key_value_heads, k.shape[2] // self.config.num_key_value_heads]
+        )
+        v = v.reshape(
+            [v.shape[0], v.shape[1], self.config.num_key_value_heads, v.shape[2] // self.config.num_key_value_heads]
+        )
 
         # k.stop_gradient = False
         # v.stop_gradient = False
         # out = paddle.nn.functional.scaled_dot_product_attention(q, k, v) # if use this, must set k and v stop_gradient to False
         out = scaled_dot_product_attention(q, k, v)  # if use this, no need to manually set k and v
-        out = rearrange(out, "b n h d -> b n (h d)", h=self.config.num_key_value_heads)
+        # out = rearrange(out, "b n h d -> b n (h d)", h=self.config.num_key_value_heads) # from einops import rearrange
+        out = out.reshape([out.shape[0], out.shape[1], out.shape[2] * out.shape[3]])
 
         out_of_layer1 = self.cross_attend_blocks_0_fn_to_out(out) + last_hidden_states
 
