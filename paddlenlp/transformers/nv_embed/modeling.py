@@ -22,14 +22,9 @@ import paddle.nn as nn
 import tqdm
 from paddle.distributed.fleet.utils import recompute
 
-from paddlenlp.transformers import (
-    AutoTokenizer,
-    MistralModel,
-    PretrainedConfig,
-    PretrainedModel,
-)
-from paddlenlp.transformers.model_outputs import BaseModelOutputWithPast, ModelOutput
-from paddlenlp.utils.log import logger
+from ...utils.log import logger
+from .. import AutoTokenizer, MistralModel, PretrainedConfig, PretrainedModel
+from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 
 
 @dataclass
