@@ -126,7 +126,7 @@ class LatentModel(PretrainedModel):
         self_latents_weight_T = self.latents(one).T
         # latents = repeat(self_latents_weight_T, "d h -> b d h", b=last_hidden_states.shape[0]) # from einops import repeat
         latents = paddle.tile(self_latents_weight_T, repeat_times=last_hidden_states.shape[0]).reshape(
-            self_latents_weight_T.shape[0], last_hidden_states.shape[0], self_latents_weight_T.shape[1]
+            [self_latents_weight_T.shape[0], last_hidden_states.shape[0], self_latents_weight_T.shape[1]]
         )
         latents = latents.transpose([1, 0, 2])
 
@@ -170,6 +170,7 @@ class LatentModel(PretrainedModel):
 
         out_of_layer2 = after_geglu + out_of_layer1
 
+        pool_mask = pool_mask.astype(out_of_layer2.dtype)
         s = paddle.sum(
             out_of_layer2 * pool_mask.unsqueeze(-1),
             axis=1,
