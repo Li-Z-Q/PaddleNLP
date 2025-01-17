@@ -51,9 +51,11 @@ class BiEncoderModel(PretrainedModel):
         eval_batch_size: int = 8,
         tokenizer=None,
         max_seq_length: int = 4096,
+        model_flag: str = None,
+        dtype: str = "float16",
     ):
         super().__init__()
-        self.model = AutoModel.from_pretrained(model_name_or_path, convert_from_torch=True)
+        self.model = AutoModel.from_pretrained(model_name_or_path, convert_from_torch=True, dtype=dtype)
         self.model_config = AutoConfig.from_pretrained(model_name_or_path)
         self.cross_entropy = nn.CrossEntropyLoss(reduction="mean")
 
@@ -88,6 +90,8 @@ class BiEncoderModel(PretrainedModel):
                 raise ValueError("Distributed training has not been initialized for representation all gather.")
             self.process_rank = dist.get_rank()
             self.world_size = dist.get_world_size()
+
+        self.model_flag = model_flag
 
     def sentence_embedding(self, hidden_state, mask):
         if self.sentence_pooling_method == "mean":
@@ -253,6 +257,9 @@ class BiEncoderModel(PretrainedModel):
                 s = paddle.sum(last_hidden_state * inputs.attention_mask.unsqueeze(-1), axis=1)
                 d = inputs.attention_mask.sum(axis=1, keepdim=True)
                 embeddings = s / d
+            elif self.sentence_pooling_method == "last_8":
+                last_8_embeddings = last_hidden_state[:, -8:, :]
+                embeddings = paddle.mean(last_8_embeddings, axis=1)
             else:
                 raise NotImplementedError(f"Pooling method {self.pooling_method} not supported.")
 
@@ -271,6 +278,10 @@ class BiEncoderModel(PretrainedModel):
             input_texts = [f"{self.query_instruction}{query}" for query in queries]
         else:
             input_texts = queries
+
+        if self.model_flag == "llara":
+            input_texts = self.preprocess_sentences_for_llara(input_texts, query_or_doc="query")
+
         return self.encode_sentences(input_texts)
 
     def encode_corpus(self, corpus: List[Union[Dict[str, str], str]], **kwargs) -> np.ndarray:
@@ -291,4 +302,33 @@ class BiEncoderModel(PretrainedModel):
                 input_texts = [f"{self.document_instruction}{doc}" for doc in corpus]
             else:
                 input_texts = corpus
+
+        if self.model_flag == "llara":
+            input_texts = self.preprocess_sentences_for_llara(input_texts, query_or_doc="doc")
+
         return self.encode_sentences(input_texts)
+
+    def preprocess_sentences_for_llara(self, sentences: List[str], query_or_doc: str, **kwargs) -> List[str]:
+
+        prefix = '"'
+        if query_or_doc == "query":
+            suffix = '", predict the following passage within eight words: <s9><s10><s11><s12><s13><s14><s15><s16>'
+        elif query_or_doc == "doc":
+            suffix = '", summarize the above passage within eight words: <s1><s2><s3><s4><s5><s6><s7><s8>'
+        else:
+            raise ValueError(f"Invalid query_or_doc: {query_or_doc}")
+
+        sentences_after_process = []
+        for sentence in sentences:
+            inputs = self.tokenizer(
+                sentence,
+                return_tensors=None,
+                max_length=self.max_seq_length - 20,
+                truncation=True,
+                add_special_tokens=False,
+            )
+            sentences_after_process.append(self.tokenizer.decode(inputs["input_ids"], skip_special_tokens=True))
+
+        sentences_after_process = [prefix + " " + sentence + " " + suffix for sentence in sentences_after_process]
+
+        return sentences_after_process

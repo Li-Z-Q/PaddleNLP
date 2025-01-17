@@ -12,14 +12,90 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+import sys  # TODO: 这个地方我回头会删掉，现在加这个东西的原因是：我们并没有通过pip安装paddlenlp，而是使用正在开发的这个paddlenlp
+
+sys.path = ["/141nfs/lizhuoqun/PaddleNLP"] + sys.path
+print(sys.path)
+
 import argparse
 import logging
 
 import mteb
 from mteb import MTEB
+from mteb.abstasks.AbsTaskRetrieval import AbsTaskRetrieval, HFDataLoader
+from mteb.abstasks.TaskMetadata import TaskMetadata
 
 from paddlenlp.peft import LoRAConfig, LoRAModel
 from paddlenlp.transformers import AutoTokenizer, BiEncoderModel, NVEncodeModel
+
+
+class MSMARCOTITLE(AbsTaskRetrieval):
+    metadata = TaskMetadata(
+        dataset={
+            "path": "/141nfs/lizhuoqun/PaddleNLP/slm/pipelines/examples/contrastive_training/msmarco-passage-title",  # TODO: 这个地方需要确认一下，这里的path和下面evaluation.run里面的path到底哪一个是没有用的
+            "revision": "c5a29a104738b98a9e76336939199e264163d4a0",
+            "hf_hub_name": "mteb/msmarco",
+        },
+        name="MSMARCOTITLE",
+        description="MS MARCO is a collection of datasets focused on deep learning in search",
+        reference="https://microsoft.github.io/msmarco/",
+        type="Retrieval",
+        category="s2p",
+        eval_splits=["train", "dev", "test"],
+        eval_langs=["eng-Latn"],
+        main_score="ndcg_at_10",
+        date=None,
+        form=None,
+        domains=None,
+        task_subtypes=None,
+        license=None,
+        socioeconomic_status=None,
+        annotations_creators=None,
+        dialect=None,
+        text_creation=None,
+        bibtex_citation=None,
+        n_samples=None,
+        avg_character_length=None,
+    )
+
+    def load_data(self, **kwargs):
+        if self.data_loaded:
+            return
+        self.corpus, self.queries, self.relevant_docs = {}, {}, {}
+        hf_repo_qrels = (
+            self.metadata_dict["dataset"]["hf_hub_name"] + "-qrels"
+            if "clarin-knext" in self.metadata_dict["dataset"]["hf_hub_name"]
+            else None
+        )
+        for split in kwargs.get("eval_splits", self.metadata_dict["eval_splits"]):
+            if kwargs.get("data_folder", None) is not None:
+                data_folder = kwargs.get("data_folder", None)
+                print(f"Loading data from local folder: {data_folder}")
+                logger.info("Loading data from local folder: {}".format(data_folder))
+                corpus, queries, qrels = HFDataLoader(
+                    data_folder=data_folder,
+                    streaming=False,
+                    keep_in_memory=False,
+                ).load(split=split)
+            else:
+                corpus, queries, qrels = HFDataLoader(
+                    hf_repo=self.metadata_dict["dataset"]["hf_hub_name"],
+                    hf_repo_qrels=hf_repo_qrels,
+                    streaming=False,
+                    keep_in_memory=False,
+                ).load(split=split)
+            # Conversion from DataSet
+            queries = {query["id"]: query["text"] for query in queries}
+            corpus = {doc["id"]: {"title": doc["title"], "text": doc["text"]} for doc in corpus}
+            self.corpus[split], self.queries[split], self.relevant_docs[split] = (
+                corpus,
+                queries,
+                qrels,
+            )
+
+        self.data_loaded = True
 
 
 class MTEB_EvalModel:
@@ -51,6 +127,9 @@ def get_args():
     parser.add_argument("--pooling_method", default="last", type=str)  # mean, last, cls
     parser.add_argument("--max_seq_length", default=4096, type=int)
     parser.add_argument("--eval_batch_size", default=1, type=int)
+
+    parser.add_argument("--dtype", default="float16", type=str)
+    parser.add_argument("--model_flag", default=None, type=str)
 
     parser.add_argument("--pad_token", default="unk_token", type=str)  # unk_token, eos_token
     parser.add_argument("--padding_side", default="left", type=str)  # right, left
@@ -123,6 +202,8 @@ if __name__ == "__main__":
             tokenizer=tokenizer,
             eval_batch_size=args.eval_batch_size,
             max_seq_length=args.max_seq_length,
+            model_flag=args.model_flag,
+            dtype=args.dtype,
         )
 
         if args.peft_model_name_or_path:
@@ -140,9 +221,20 @@ if __name__ == "__main__":
     mtb_eval_model = MTEB_EvalModel(encode_model, tokenizer)
 
     logger.info("Ready to eval")
-    evaluation = MTEB(tasks=mteb.get_tasks(tasks=[args.task_name]))
-    evaluation.run(
-        encode_model,
-        output_folder=f"{args.output_folder}/{args.task_name}/{args.pooling_method}",
-        eval_splits=[args.task_split],
-    )
+    if args.task_name == "MSMARCOTITLE":
+        # TODO: 回头想个办法，怎么样下载这个带title的数据集，以及如何将path传进来
+        evaluation = MTEB(tasks=[MSMARCOTITLE()])
+        evaluation.run(
+            encode_model,
+            output_folder=f"{args.output_folder}/{args.task_name}/{args.pooling_method}",
+            data_folder="/141nfs/lizhuoqun/PaddleNLP/slm/pipelines/examples/contrastive_training/msmarco-passage-title",
+            score_function="dot",
+            eval_splits=["dev"],
+        )
+    else:
+        evaluation = MTEB(tasks=mteb.get_tasks(tasks=[args.task_name]))
+        evaluation.run(
+            encode_model,
+            output_folder=f"{args.output_folder}/{args.task_name}/{args.pooling_method}",
+            eval_splits=[args.task_split],
+        )

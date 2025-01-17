@@ -1,6 +1,6 @@
 # 向量检索模型训练
 
-## 安装
+## 安装 (TODO: 我之后会改成 paddle3的安装命令)
 
 推荐安装 gpu 版本的[PaddlePaddle](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/install/conda/linux-conda.html)，以 cuda11.7的 paddle 为例，安装命令如下：
 
@@ -126,7 +126,7 @@ python -u -m paddle.distributed.launch --gpus "0,1,2,3,4,5,6,7" train.py --do_tr
 在 T2Ranking 上评估，对 RocketQA 的测试代码示例如下：
 ```
 export CUDA_VISIBLE_DEVICES=0
-model_path=rocketqa-zh-base-query-encoder-duretrieval   
+model_path=rocketqa-zh-base-query-encoder-duretrieval
 python evaluation/benchmarks.py --model_type bert \
     --query_model ${model_path} \
     --passage_model ${model_path} \
@@ -185,6 +185,58 @@ python -u evaluation/eval_mteb.py \
 [MTEB](https://github.com/embeddings-benchmark/mteb)
 是一个大规模文本嵌入评测基准，包含了丰富的向量检索评估任务和数据集。
 本仓库主要面向其中的中英文检索任务（Retrieval），并以 SciFact 数据集作为主要示例。
+
+评估 LLARA 向量检索模型 ([LLARA-passage](https://huggingface.co/BAAI/LLARA-passage)):
+
+评估其在 SciFact 数据集上的性能:
+```
+export CUDA_VISIBLE_DEVICES=0
+python evaluation/eval_mteb.py \
+       --base_model_name_or_path LLARA-passage \
+       --output_folder en_results/llara-passage \
+       --task_name 'SciFact' \
+       --eval_batch_size 8 \
+       --pooling_method last_8 \
+       --model_flag llara \
+       --add_bos_token 1 \
+       --add_eos_token 0 \
+       --max_seq_length 532
+```
+结果文件保存在`en_results/llara-passage/SciFact/last_8/no_model_name_available/no_revision_available/SciFact.json`，包含以下类似的评估结果：
+```
+'ndcg_at_1': 0.65333,
+'ndcg_at_3': 0.7272,
+'ndcg_at_5': 0.74047,
+'ndcg_at_10': 0.7607,
+'ndcg_at_20': 0.76895,
+'ndcg_at_100': 0.78079,
+'ndcg_at_1000': 0.78594,
+```
+
+评估其在 MSMARCOTITLE 数据集上的性能:
+```
+export CUDA_VISIBLE_DEVICES=0
+python evaluation/eval_mteb.py \
+       --base_model_name_or_path LLARA-passage \
+       --output_folder en_results/llara-passage \
+       --task_name 'MSMARCOTITLE' \
+       --eval_batch_size 8 \
+       --pooling_method last_8 \
+       --model_flag llara \
+       --add_bos_token 1 \
+       --add_eos_token 0 \
+       --max_seq_length 532
+```
+结果文件保存在`en_results/llara-passage/MSMARCOTITLE/last_8/no_model_name_available/no_revision_available/MSMARCOTITLE.json`，包含以下类似的评估结果：（TODO: 这个地方弄错了，下面的结果是不带 title 的，我之后会把带 title 的结果放上来）
+```
+'mrr_at_1': 0.27320916905444126,
+'mrr_at_3': 0.36984240687679154,
+'mrr_at_5': 0.39247134670487116,
+'mrr_at_10': 0.408858359485151,
+'mrr_at_20': 0.41549618393398596,
+'mrr_at_100': 0.41905386335354294,
+'mrr_at_1000': 0.41933821737968063,
+```
 
 评估 NV-Embed 向量检索模型（[NV-Embed-v1](https://huggingface.co/nvidia/NV-Embed-v1)）：
 ```
@@ -291,3 +343,7 @@ python evaluation/eval_mteb.py \
 [4] Niklas Muennighoff, Nouamane Tazi, Loic Magne, Nils Reimers: MTEB: Massive Text Embedding Benchmark. EACL 2023.
 
 [5] Chankyu Lee, Rajarshi Roy, Mengyao Xu, Jonathan Raiman, Mohammad Shoeybi, Bryan Catanzaro, Wei Ping: NV-Embed: Improved Techniques for Training LLMs as Generalist Embedding Models. arXiv 2024.
+
+[6] # TODO: 之后我会把参考文献加上来
+
+[7]
