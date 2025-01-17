@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Union
 import numpy as np
 import paddle
 import paddle.distributed as dist
+import paddle.distributed.auto_parallel.intermediate.parallelize as parallelize
 import paddle.nn as nn
 from paddle.distributed import fleet
 from tqdm.auto import tqdm
@@ -29,6 +30,7 @@ from paddlenlp.trainer import Trainer
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.log import logger
 from .argparser import strtobool
+from .auto_training_args import AutoTrainingArguments
 from .trainer import SCALER_NAME, SCHEDULER_NAME, TRAINER_STATE_NAME, TRAINING_ARGS_NAME
 from .trainer_callback import TrainerState
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
@@ -65,13 +67,66 @@ class AutoTrainer(Trainer):
                     return loss
 
                 kwargs.update({"criterion": loss_func})
-
+        self.auto_dist_config = kwargs.pop("auto_dist_config", None)
+        model = kwargs.get("model", None)
+        assert model is not None
+        if kwargs.get("args", None) is not None and kwargs["args"].use_intermediate_api:
+            if not parallelize.has_parallelized_model:
+                model, self.auto_dist_config = self.parallel_model(model, kwargs["args"])
+                kwargs["model"] = model
+            else:
+                assert kwargs.get(
+                    "auto_dist_config", None
+                ), "if use AutoTrainer.parallel_model , auto_dist_config obtained from parallel_model should be passed to AutoTrainer  "
+                self.auto_dist_config = kwargs.pop("auto_dist_config")
+        model = kwargs["model"]
+        for param in model.parameters():
+            # NOTE(zhangwl):in pipeline mode , param my be initialized before while delte init_func ,but param is still not is_initialized
+            if not param._is_initialized() and param._init_func is not None:
+                param.initialize()
+        kwargs["model"] = model
         super().__init__(*args, **kwargs)
         assert self.args.enable_auto_parallel
 
         self.global_mesh = fleet.auto.get_mesh()
         self.comm_group_in_pp = fleet.get_hybrid_communicate_group().get_pipe_parallel_group()
         self._in_pir_mode = paddle.base.framework.get_flags("FLAGS_enable_pir_api")["FLAGS_enable_pir_api"]
+
+    @classmethod
+    def parallel_model(cls, model, training_args: AutoTrainingArguments):
+        """
+        Parallelize the model from a single card version to a distributed version.
+        Args:
+            model (paddle.nn.Layer): the model to be parallelized.
+            training_args (AutoTrainingArguments) : Training arguments which contain distributed information
+        Returns:
+            the model after parallelize and config conatins distributed strategy
+        """
+        if not training_args.use_intermediate_api:
+            return model, None
+        assert model is not None
+        for param in model.parameters():
+            if param._is_initialized():
+                logger.warning(
+                    "intermediate_api needs lazy init because if param init before parallelize_model ,"
+                    + " param will be allocated the full amount of memory"
+                    + " We recommend reallocating memory after paralleliz-model to reduce the peak of memory allocation"
+                )
+
+        auto_dist_degree = {
+            "tensor_parallel": training_args.tensor_parallel_degree > 1,
+            "sequence_parallel": training_args.sequence_parallel,
+            "pipeline_parallel": training_args.pipeline_parallel_degree > 1,
+            "data_sharding_parallel": training_args.dataset_world_size > 1,
+            "sharding": training_args.sharding,
+            "sharding_mesh_dim": training_args.sharding_parallel_mesh_dimension,
+        }
+        auto_dist_config = model._generate_auto_dist_config(auto_dist_degree)
+        model = parallelize.parallelize_model(
+            model,
+            config=auto_dist_config,
+        )
+        return model, auto_dist_config
 
     def _nested_gather(self, tensors):
         """
@@ -115,30 +170,37 @@ class AutoTrainer(Trainer):
         return dist_loader
 
     def _wrap_for_auto(self, model, train_dataloader):
-        logger.info("Wrapping model for auto paralle")
+        logger.info(f"Wrapping model for auto parallel using intermediate api {self.args.use_intermediate_api} ")
         dist_loader = self._wrap_for_dist_loader(train_dataloader)
-        sharding_parallel_mesh_dimension = self.args.sharding_parallel_mesh_dimension
 
-        if ShardingOption.SHARD_OP in self.args.sharding:
-            self.optimizer = dist.shard_optimizer(
+        if self.args.use_intermediate_api:
+            assert self.auto_dist_config is not None
+            self.optimizer = parallelize.parallelize_optimizer(
                 self.optimizer,
-                dist.ShardingStage1(sharding_mesh_dim=sharding_parallel_mesh_dimension),
-                self.args.gradient_accumulation_steps,
-            )
-        elif ShardingOption.SHARD_GRAD_OP in self.args.sharding:
-            self.optimizer = dist.shard_optimizer(
-                self.optimizer,
-                dist.ShardingStage2(sharding_mesh_dim=sharding_parallel_mesh_dimension),
-                self.args.gradient_accumulation_steps,
-            )
-        elif ShardingOption.FULL_SHARD in self.args.sharding:
-            self.optimizer = dist.shard_optimizer(
-                self.optimizer,
-                dist.ShardingStage3(sharding_mesh_dim=sharding_parallel_mesh_dimension),
-                self.args.gradient_accumulation_steps,
+                config=self.auto_dist_config,
             )
         else:
-            self.optimizer = dist.shard_optimizer(self.optimizer, None, self.args.gradient_accumulation_steps)
+            sharding_parallel_mesh_dimension = self.args.sharding_parallel_mesh_dimension
+            if ShardingOption.SHARD_OP in self.args.sharding:
+                self.optimizer = dist.shard_optimizer(
+                    self.optimizer,
+                    dist.ShardingStage1(sharding_mesh_dim=sharding_parallel_mesh_dimension),
+                    self.args.gradient_accumulation_steps,
+                )
+            elif ShardingOption.SHARD_GRAD_OP in self.args.sharding:
+                self.optimizer = dist.shard_optimizer(
+                    self.optimizer,
+                    dist.ShardingStage2(sharding_mesh_dim=sharding_parallel_mesh_dimension),
+                    self.args.gradient_accumulation_steps,
+                )
+            elif ShardingOption.FULL_SHARD in self.args.sharding:
+                self.optimizer = dist.shard_optimizer(
+                    self.optimizer,
+                    dist.ShardingStage3(sharding_mesh_dim=sharding_parallel_mesh_dimension),
+                    self.args.gradient_accumulation_steps,
+                )
+            else:
+                self.optimizer = dist.shard_optimizer(self.optimizer, None, self.args.gradient_accumulation_steps)
 
         if self.args.to_static:
             unified_strategy = dist.Strategy()

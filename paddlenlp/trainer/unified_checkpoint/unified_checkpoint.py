@@ -587,8 +587,13 @@ def unified_optimizer_into_shards(
     static2struct_name_mappings = {}
     state_dict = get_expected_state_dict(model)
     fp32_weight = {}
+
+    extra_save_keys = {}
     for k, v in state_dict.items():
-        static2struct_name_mappings[v.name] = k
+        if v.name not in static2struct_name_mappings:
+            static2struct_name_mappings[v.name] = k
+        else:
+            extra_save_keys[v.name] = k
         if master_weights is not None and v.dtype == paddle.float32:
             if args.dataset_rank > 0:  # deal with different dataset rank.
                 continue
@@ -599,10 +604,15 @@ def unified_optimizer_into_shards(
         static_name, type_name = generate_base_static_name(key)
         new_name = static2struct_name_mappings[static_name] + "/" + type_name
         optim_state_dict[new_name] = optim_state_dict.pop(key)
+        if static_name in extra_save_keys:
+            extra_new_name = extra_save_keys[static_name] + "/" + type_name
+            optim_state_dict[extra_new_name] = optim_state_dict[new_name]
 
     if master_weights is not None:
         for key in list(master_weights.keys()):
             master_weights[static2struct_name_mappings[key]] = master_weights.pop(key)
+            if key in extra_save_keys:
+                master_weights[extra_save_keys[key]] = master_weights[static2struct_name_mappings[key]]
         master_weights.update(fp32_weight)
 
     # filter optimizer param
