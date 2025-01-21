@@ -19,11 +19,10 @@ import paddle
 
 from paddlenlp.transformers import NVEncodeModel, PretrainedConfig
 
-from ...testing_utils import require_gpu, slow
+from ...testing_utils import require_gpu
 
 
 class NVEncodeModelIntegrationTest(unittest.TestCase):
-    @slow
     @require_gpu(1)
     def test_model_tiny_logits(self):
         input_texts = [

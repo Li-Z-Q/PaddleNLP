@@ -19,11 +19,10 @@ import paddle
 
 from paddlenlp.transformers import AutoTokenizer, BiEncoderModel
 
-from ...testing_utils import require_gpu, slow
+from ...testing_utils import require_gpu
 
 
 class BiEncoderModelIntegrationTest(unittest.TestCase):
-    @slow
     @require_gpu(1)
     def test_model_tiny_logits(self):
         input_texts = [
